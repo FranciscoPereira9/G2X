@@ -1,0 +1,18 @@
+seed: 10086
+task: g2x
+train: True
+original:
+  wandb_project: Original
+  wandb_entity: franciscop9
+  epochs: 2
+  batch: 40
+  optimizer: adam
+  lr: 0.001
+g2x:
+  wandb_project: L2X_PyTorch
+  wandb_entity: franciscop9
+  epochs: 50
+  batch: 32
+  optimizer: adam
+  lr: 0.001
+  k: 10
