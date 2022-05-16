@@ -125,7 +125,7 @@ def parametrize_predictions(parameters, train=False):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print('Creating GNN Model...')
     # GNN
-    gnn_model = GNN(250)
+    gnn_model = GNN(50, 50, 2)
     # Train
     if train:
         print("Training GNN Model...")
@@ -134,7 +134,7 @@ def parametrize_predictions(parameters, train=False):
     # Load L2X Model
     print("Loading GNN Model...")
     PATH = "models/gnn.pth"
-    gnn_model = GNN(250)
+    gnn_model = GNN(50, 50, 2)
     gnn_model.load_state_dict(torch.load(PATH, map_location=device))
     gnn_model.eval()
     print("GNN Model loaded.")

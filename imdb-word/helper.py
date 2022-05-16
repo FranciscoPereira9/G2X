@@ -99,7 +99,6 @@ def fit_model(network, epoch, epochs, criterion, optimizer, train_loader):
         if use_cuda:
             inp = inp.cuda()
             target = target.cuda()
-            data.cuda()
         # Good practice to keep track of preparation time and computation time to find any issues in your dataloader
         prepare_time = start_time - time.time()
         # Forwards Pass

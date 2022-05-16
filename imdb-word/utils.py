@@ -127,7 +127,7 @@ def build_graph(doc, y, id_to_word, pre_trained_emb, preprocess=False):
     edges = get_relations(doc)
 
     # label to tensor
-    y = torch.tensor(np.argmax(y), dtype=torch.long)
+    y = torch.tensor(y, dtype=torch.float32)
 
     # Create PyTorch Geometric Data object
     G = Data(x=node_features, edge_index=edges, y=y, node_labels=unique_words)

@@ -112,6 +112,7 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
         """
         assert setting in ["train", "test"], "setting must be either 'train' or 'test'."
         self.setting = setting
+        self.length = 0
         super(IMDB_Graph_SentimentDataset, self).__init__(root, transform, pre_transform, pre_filter)
 
     @property
@@ -130,6 +131,7 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
         if len(files) == 0:
             out = ['non_existing_file.pt']
         else:
+            self.length = len(files)
             out = [os.path.join(self.setting, file) for file in files]
         return out
 
@@ -180,8 +182,8 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
                 # Save Data
                 torch.save(graph, os.path.join(self.processed_dir + '/train', f'data_{idx}.pt'))
                 idx += 1
-                if idx == 500:
-                    break
+                #if idx == 500:
+                #    break
             print("Train data was parsed and saved successfully.")
         elif self.setting == 'test':
             # Loop through test documents
@@ -192,13 +194,13 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
                 # Save Data
                 torch.save(graph, os.path.join(self.processed_dir + '/test', f'data_{idx}.pt'))
                 idx += 1
-                if idx == 500:
-                    break
+                #if idx == 500:
+                #    break
             print("Test data was parsed and saved successfully.")
         return True
 
     def len(self):
-        return len(self.processed_file_names)
+        return self.length
 
     def get(self, idx):
         folder = os.path.join(self.processed_dir, self.setting)
