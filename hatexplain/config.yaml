@@ -1,0 +1,33 @@
+seed: 10086
+task: g2x
+train: True
+original:
+  wandb_project: Original
+  wandb_entity: franciscop9
+  epochs: 10
+  batch: 64
+  optimizer: adam
+  lr: 0.001
+  num_classes: 3
+l2x:
+  wandb_project: L2X_PyTorch
+  wandb_entity: franciscop9
+  epochs: 20
+  batch: 64
+  optimizer: adam
+  lr: 0.001
+  num_classes: 3
+  k: 5
+  tau: 1
+  hidden_dims: 128
+g2x:
+  wandb_project: G2X_PyTorch
+  wandb_entity: franciscop9
+  epochs: 10
+  batch: 128
+  optimizer: adam
+  lr: 0.001
+  num_classes: 3
+  k: 5
+  tau: 1
+  hidden_dims: 128
