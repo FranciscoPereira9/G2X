@@ -7,9 +7,7 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
-from torch.nn import Linear, BatchNorm1d, ModuleList
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, global_mean_pool, global_max_pool, TransformerConv, TopKPooling
 
 # Reproducibility:
 torch.manual_seed(10086)
@@ -74,6 +72,7 @@ class SampleConcrete(nn.Module):
         self.tau = tau
         self.k = k
         self.train_explainer = train_explainer
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     def forward(self, logits):
         # logits: [batch_size, 1, maxlen]
@@ -81,7 +80,7 @@ class SampleConcrete(nn.Module):
         d = int(logits.shape[-1])
         unif_shape = [batch_size, self.k, d]
         # Altered uniform
-        uniform = torch.rand(unif_shape, dtype=torch.float32)
+        uniform = torch.rand(unif_shape, dtype=torch.float32).to(self.device)
         gumbel = -torch.log(-torch.log(uniform))
         noisy_logits = (gumbel + logits) / self.tau  # smaller the more "discrete" it gets (try different ones 1/0.5)
         samples = torch.softmax(noisy_logits, dim=-1)
@@ -94,7 +93,7 @@ class SampleConcrete(nn.Module):
             output = samples
         else:
             output = discrete_logits
-        return torch.unsqueeze(output, -2)
+        return torch.unsqueeze(output, -2).to(self.device)
 
 
 class LambdaLayer(nn.Module):
@@ -141,116 +140,6 @@ class L2X(nn.Module):
         return out
 
 
-class GNN_0(torch.nn.Module):
-    def __init__(self, hidden_channels):
-        super(GNN, self).__init__()
-        torch.manual_seed(12345)
-        self.conv1 = GCNConv(50, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.conv3 = GCNConv(hidden_channels, 64)
-        self.lin = nn.Linear(64, 2)
-
-    def forward(self, data):
-        x = data.x
-        edge_index = data.edge_index
-        batch = data.batch
-        # 1. Obtain node embeddings
-        x = self.conv1(x, edge_index)
-        x = x.relu()
-        x = self.conv2(x, edge_index)
-        x = x.relu()
-        x = self.conv3(x, edge_index)
-
-        # 2. Readout layer
-        x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
-
-        # 3. Apply a final classifier
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.lin(x)
-
-        return x
-
-
-class GNN(torch.nn.Module):
-    def __init__(self, feature_size, embedding_size, num_classes):
-        super(GNN, self).__init__()
-        n_heads = 3
-        self.n_layers = 4
-        dropout_rate = 0.2
-        top_k_ratio = 0.5
-        self.top_k_every_n = 1
-        dense_neurons = 256
-
-        self.conv_layers = ModuleList([])
-        self.transf_layers = ModuleList([])
-        self.pooling_layers = ModuleList([])
-        self.bn_layers = ModuleList([])
-
-        # Transformation layer
-        self.conv1 = TransformerConv(feature_size,
-                                     embedding_size,
-                                     heads=n_heads,
-                                     dropout=dropout_rate,
-                                     beta=True)
-
-        self.transf1 = Linear(embedding_size * n_heads, embedding_size)
-        self.bn1 = BatchNorm1d(embedding_size)
-
-        # Other layers
-        for i in range(self.n_layers):
-            self.conv_layers.append(TransformerConv(embedding_size,
-                                                    embedding_size,
-                                                    heads=n_heads,
-                                                    dropout=dropout_rate,
-                                                    beta=True))
-
-            self.transf_layers.append(Linear(embedding_size * n_heads, embedding_size))
-            self.bn_layers.append(BatchNorm1d(embedding_size))
-            if i % self.top_k_every_n == 0:
-                self.pooling_layers.append(TopKPooling(embedding_size, ratio=top_k_ratio))
-
-        # Linear layers
-        self.linear1 = Linear(embedding_size * 2, dense_neurons)
-        self.linear2 = Linear(dense_neurons, int(dense_neurons / 2))
-        self.linear3 = Linear(int(dense_neurons / 2), num_classes)
-
-    def forward(self, data):
-        x = data.x
-        edge_index = data.edge_index
-        batch_index = data.batch
-        # Initial transformation
-        x = self.conv1(x, edge_index)
-        x = torch.relu(self.transf1(x))
-        x = self.bn1(x)
-
-        # Holds the intermediate graph representations
-        global_representation = []
-
-        for i in range(self.n_layers):
-            x = self.conv_layers[i](x, edge_index)
-            x = torch.relu(self.transf_layers[i](x))
-            x = self.bn_layers[i](x)
-            # Always aggregate last layer
-            if i % self.top_k_every_n == 0 or i == self.n_layers:
-                x, edge_index, _, batch_index, _, _ = \
-                    self.pooling_layers[int(i / self.top_k_every_n)](x, edge_index, batch=batch_index)
-                # Add current representation
-                global_representation.append(torch.cat([global_mean_pool(x, batch_index), global_max_pool(x, batch_index)], dim=1))
-
-        x = sum(global_representation)
-
-        # Output block
-        x = torch.relu(self.linear1(x))
-        x = F.dropout(x, p=0.8, training=self.training)
-        x = torch.relu(self.linear2(x))
-        x = F.dropout(x, p=0.8, training=self.training)
-        x = self.linear3(x)
-
-        return x
-
-
-
-
 def load_pretrained_gumbel_selector(pretrained_PATH="models/l2x.pth"):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # Create Gumbel Selector
@@ -277,5 +166,7 @@ if __name__ == "__main__":
     T = sample(logits_T)
     q = QParameterization(vocab_size=max_features, embed_dim=embedding_dims, hidden_dims=hidden_dims, k=k)
     out = q(x, T)
-    l, T = L2X(vocab_size=max_features, embed_dim=embedding_dims, hidden_dims=hidden_dims, k=10, tau=1, train_explainer=False)
+    l, T = L2X(vocab_size=max_features, embed_dim=embedding_dims, hidden_dims=hidden_dims, k=10, tau=1,
+               train_explainer=False)
     print(l(x).shape)
+

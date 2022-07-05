@@ -23,12 +23,30 @@ def train_routine(network, parameters, train_loader, val_loader=None, gpus=1, mo
     # Logging - If you don't want your script to sync to the cloud
     os.environ['WANDB_MODE'] = 'online'
     # WandB config
-    wandb.init(project=parameters["wandb_project"], entity=parameters["wandb_entity"])
-    wandb.config = {
-        "learning_rate": lr,
-        "epochs": epochs,
-        "batch_size": batch_size
-    }
+    if "k" in parameters.keys():
+        init = wandb.init(project=parameters["wandb_project"],
+                          entity=parameters["wandb_entity"],
+                          config={"epochs": parameters['epochs'],
+                                  "batch": parameters['batch'],
+                                  "optimizer": parameters['optimizer'],
+                                  "lr": parameters['lr'],
+                                  "num_classes": parameters['num_classes'],
+                                  "k": parameters['k'],
+                                  "tau": parameters['tau'],
+                                  "hidden_dims": parameters['hidden_dims']
+                                  }
+                          )
+    else:
+        init = wandb.init(project=parameters["wandb_project"],
+                          entity=parameters["wandb_entity"],
+                          config={"epochs": parameters['epochs'],
+                                  "batch": parameters['batch'],
+                                  "optimizer": parameters['optimizer'],
+                                  "lr": parameters['lr'],
+                                  "num_classes": parameters['num_classes']
+                                  }
+                          )
+
     # create losses (criterion in pytorch)
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -49,7 +67,8 @@ def train_routine(network, parameters, train_loader, val_loader=None, gpus=1, mo
     # if we want to run experiment on multiple GPUs we move the models there
     if gpus > 1:
         network = torch.nn.DataParallel(network)
-
+    # Banner
+    print(f"Using CUDA: {torch.cuda.is_available()}")
     # Keep track of experiments -> WandB or Tensorboard
     # Or WandB
     wandb.watch(network)
@@ -102,6 +121,8 @@ def fit_model(network, epoch, epochs, criterion, optimizer, train_loader):
         # Good practice to keep track of preparation time and computation time to find any issues in your dataloader
         prepare_time = start_time - time.time()
         # Forwards Pass
+        #print()
+        #print(inp.x)
         output = network(inp)
         # Backward Pass
         loss = criterion(output, target)
@@ -231,6 +252,42 @@ def make_explanations(network, loader):
     return scores
 
 
+def make_gnn_explanations(network, loader):
+    all_predictions = []
+    all_targets = []
+    # Prepare for Inference
+    network.eval()
+    with torch.no_grad():
+        # if running on GPU and we want to use cuda move model there
+        use_cuda = torch.cuda.is_available()
+        if use_cuda:
+            network = network.cuda()
+        start_time = time.time()
+        # Use tqdm for iterating through data
+        pbar = tqdm(enumerate(loader), total=len(loader))
+        for batch_idx, data in pbar:
+            inp, target = data.values()
+            if use_cuda:
+                inp = inp.cuda()
+                target = target.cuda()
+            # It's very good practice to keep track of preparation time and computation time using tqdm to find any issues in your dataloader
+            prepare_time = start_time - time.time()
+            # Generate outputs
+            output = network(inp)
+            # Compute computation time and *compute_efficiency*
+            process_time = start_time - time.time() - prepare_time
+            pbar.set_description("Compute efficiency: {:.2f}".format(process_time / (process_time + prepare_time)))
+            start_time = time.time()
+            # Select Explaining Nodes for each instance
+            for i in range(len(data['input'].ptr) - 1):
+                slice = (data['input'].ptr[i].item(), data['input'].ptr[i + 1].item())
+                sgl_out_labels = output.node_labels[slice[0]:slice[1]]
+                sgl_out_x = output.x[slice[0]:slice[1]]
+                selected_node_labels = sgl_out_labels[sgl_out_x.squeeze() == 1].detach().to("cpu").tolist() # selected_node_labels = output.node_labels[output.x.squeeze() == 1].detach().to("cpu").tolist()
+                all_predictions.append(selected_node_labels)
+    return all_predictions
+
+
 def accuracy(predictions, targets):
     """
     Args:
@@ -245,8 +302,8 @@ def accuracy(predictions, targets):
     return correct / total
 
 
-def visualise_explanations(dataset, explain_data, n_elements):
-    idxs = np.random.randint(0,25000+1, n_elements)
+def visualise_explanations(dataset, explain_data, ground_truth, predictions, n_elements):
+    idxs = np.random.randint(0, len(dataset), n_elements) # idxs = np.random.randint(0, 500, n_elements)
     sentences = []
     explanations = []
     for i in idxs:
@@ -264,6 +321,7 @@ def visualise_explanations(dataset, explain_data, n_elements):
     for idx in range(len(sentences)):
         print("Sentence    : ", sentences[idx])
         print("Explanation : ", explanations[idx])
+        print("G.T. | Pred.: ", ground_truth[idx], " | ", predictions[idx])
         print("--------------------------------------")
 
 

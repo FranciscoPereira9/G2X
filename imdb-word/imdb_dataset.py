@@ -7,7 +7,6 @@ from torch_geometric.loader import DataLoader as PyGDataLoader
 from keras.preprocessing import sequence
 from keras.datasets import imdb
 import os
-
 try:
     import cPickle as pkl
 except:
@@ -22,6 +21,7 @@ random.seed(10086)
 # Set parameters:
 max_features = 5000
 maxlen = 400
+
 
 class IMDB_SentimentDataset(Dataset):
 
@@ -99,7 +99,6 @@ class IMDB_SentimentDataset(Dataset):
         return " ".join(sentence)
 
 
-
 class IMDB_Graph_SentimentDataset(PyG_Dataset):
     def __init__(self, root, setting, transform=None, pre_transform=None, pre_filter=None):
         """
@@ -112,7 +111,18 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
         """
         assert setting in ["train", "test"], "setting must be either 'train' or 'test'."
         self.setting = setting
+        self.root = root
         self.length = 0
+        if setting == "train":
+            self.data = np.load(root+ '/x_train.npy')
+            y_train = np.load(root + '/pred_train.npy')
+            self.targets = (y_train == y_train.max(axis=1)[:, None]).astype(float)  # Make predictions binary
+        else:
+            self.data = np.load(root + '/x_val.npy')
+            y_test = np.load(root + '/pred_test.npy')
+            self.targets = (y_test == y_test.max(axis=1)[:, None]).astype(float)  # Make predictions binary
+        with open(root + '/id_to_word.pkl', 'rb') as f:
+            self.id_to_word = pkl.load(f)
         super(IMDB_Graph_SentimentDataset, self).__init__(root, transform, pre_transform, pre_filter)
 
     @property
@@ -141,7 +151,7 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
         pass
 
     def process(self):
-        if 'id_to_word.pkl' not in os.listdir(self.raw_dir):
+        if 'id_to_word.pkl' not in os.listdir(self.root):
             # Load data from original dataset
             (x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=max_features, index_from=3)
             word_to_id = imdb.get_word_index()
@@ -158,18 +168,20 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
             y_train = np.eye(2)[y_train]
             y_test = np.eye(2)[y_test]
             # Save Data
-            np.save(self.raw_dir + '/x_train.npy', x_train)
-            np.save(self.raw_dir + '/y_train.npy', y_train)
-            np.save(self.raw_dir + '/x_val.npy', x_test)
-            np.save(self.raw_dir + '/y_val.npy', y_test)
-            with open(self.raw_dir + '/id_to_word.pkl', 'wb') as f:
+            np.save(self.root + '/x_train.npy', x_train)
+            np.save(self.root + '/y_train.npy', y_train)
+            np.save(self.root + '/x_val.npy', x_test)
+            np.save(self.root + '/y_val.npy', y_test)
+            with open(self.root + '/id_to_word.pkl', 'wb') as f:
                 pkl.dump(self.id_to_word, f)
         else:
-            x_train = np.load(self.raw_dir + '/x_train.npy')
-            y_train = np.load(self.raw_dir + '/y_train.npy')
-            x_test = np.load(self.raw_dir + '/x_val.npy')
-            y_test = np.load(self.raw_dir + '/y_val.npy')
-            with open(self.raw_dir + '/id_to_word.pkl', 'rb') as f:
+            x_train = np.load(self.root + '/x_train.npy')
+            y_train = np.load(self.root + '/pred_train.npy')
+            y_train = (y_train == y_train.max(axis=1)[:, None]).astype(float) # Make predictions binary
+            x_test = np.load(self.root + '/x_val.npy')
+            y_test = np.load(self.root + '/pred_test.npy')
+            y_test = (y_test == y_test.max(axis=1)[:, None]).astype(float)  # Make predictions binary
+            with open(self.root + '/id_to_word.pkl', 'rb') as f:
                 self.id_to_word = pkl.load(f)
         # Load Glove embeddings
         glove = utils.load_glove_model()
@@ -206,6 +218,15 @@ class IMDB_Graph_SentimentDataset(PyG_Dataset):
         folder = os.path.join(self.processed_dir, self.setting)
         data = torch.load(os.path.join(folder, f'data_{idx}.pt'))
         return {"input": data, "target": data.y}
+
+    def get_text(self, idx):
+        sentence = []
+        for num in self.data[idx]:
+            if num == 0:
+                sentence.append("-")
+            else:
+                sentence.append(self.id_to_word[num])
+        return " ".join(sentence)
 
 
 if __name__ == "__main__":

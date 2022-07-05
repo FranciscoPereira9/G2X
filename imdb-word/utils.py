@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from torch_geometric.data import Data
-import networkx as nx
 import matplotlib.pyplot as plt
 import os
 
@@ -29,6 +28,15 @@ def create_dataset_from_score(dataset, scores, k):
         new_data.append(x_selected)
 
     np.save('data/x_val-L2X.npy', np.array(new_data))
+
+
+def create_explanation_dataset(dataset, selected):
+    new_data = []
+    for i, x_single in enumerate(dataset):
+        mask = np.isin(x_single, selected[i]).astype(int)
+        x_selected = (x_single * mask).astype(int)
+        new_data.append(x_selected)
+    np.save('data/x_test-G2X.npy', np.array(new_data))
 
 
 def calculate_acc(pred, y):
@@ -74,7 +82,7 @@ def get_entities(document, id_to_word, pre_trained_emb):
             if word in pre_trained_emb.keys():
                 embedding_matrix = pre_trained_emb[word].tolist()
             else:
-                embedding_matrix = (2 * np.random.random_sample(50) - 1).tolist() # randomly initialized uniform embedding [-1,1]
+                embedding_matrix = (2 * np.random.random_sample(50) - 1).tolist()  # randomly initialized uniform embedding [-1,1]
             node_features.append(embedding_matrix)
             # Track document words
             unique_words.append(document[i])
@@ -105,14 +113,27 @@ def get_relations(document, p=2):
             for j in range(1, p + 1):
                 if (i + j) < len(document):
                     # Append both relation in both directions
-                    pair1 = [unique_words[document[i]], unique_words[document[i+j]]]
-                    pair2 = [unique_words[document[i+j]], unique_words[document[i]]]
+                    pair1 = [unique_words[document[i]], unique_words[document[i + j]]]
+                    pair2 = [unique_words[document[i + j]], unique_words[document[i]]]
                     # only add unique bigrams
                     if pair1 not in relations:
                         relations.append(pair1)
                     if pair2 not in relations:
                         relations.append(pair2)
     return torch.tensor(relations, dtype=torch.long).t().contiguous()
+
+
+def remove_relations(graph, keep_nodes):
+    # Select edges to drop
+    bool_arr_0 = torch.isin(graph.edge_index[0], keep_nodes)
+    bool_arr_1 = torch.isin(graph.edge_index[1], keep_nodes)
+    bool_arr = bool_arr_0 & bool_arr_1
+    # Remove edges from source and destination
+    new_edges = torch.tensor([graph.edge_index[0][bool_arr].tolist(),  # source
+                              graph.edge_index[1][bool_arr].tolist()],  # destination
+                             dtype=torch.long)
+    graph.edge_index = new_edges
+    return graph
 
 
 def build_graph(doc, y, id_to_word, pre_trained_emb, preprocess=False):
@@ -124,7 +145,7 @@ def build_graph(doc, y, id_to_word, pre_trained_emb, preprocess=False):
     node_features, unique_words = get_entities(doc, id_to_word, pre_trained_emb)
 
     # get graph edges
-    edges = get_relations(doc)
+    edges = get_relations(doc, p=2)
 
     # label to tensor
     y = torch.tensor(y, dtype=torch.float32)
@@ -148,25 +169,3 @@ def load_glove_model(dir="glove"):
     return glove_model
 
 
-def plot_graph(G, title=None):
-    # Need pygraphviz to run this
-    # set figure size
-    plt.figure(figsize=(10, 10))
-
-    # define position of nodes in figure
-    pos = nx.nx_agraph.graphviz_layout(G)
-
-    # draw nodes and edges
-    nx.draw(G, pos=pos, with_labels=True)
-
-    # get edge labels (if any)
-    edge_labels = nx.get_edge_attributes(G, 'weight')
-
-    # draw edge labels (if any)
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-
-    # plot the title (if any)
-    plt.title(title)
-
-    plt.show()
-    return G

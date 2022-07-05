@@ -4,15 +4,30 @@ train: True
 original:
   wandb_project: Original
   wandb_entity: franciscop9
-  epochs: 2
+  epochs: 5
   batch: 40
   optimizer: adam
   lr: 0.001
-g2x:
+  num_classes: 2
+l2x:
   wandb_project: L2X_PyTorch
   wandb_entity: franciscop9
-  epochs: 50
-  batch: 32
+  epochs: 15
+  batch: 64
   optimizer: adam
   lr: 0.001
+  num_classes: 2
   k: 10
+  tau: 1
+  hidden_dims: 256
+g2x:
+  wandb_project: G2X_PyTorch
+  wandb_entity: franciscop9
+  epochs: 10
+  batch: 64
+  optimizer: adam
+  lr: 0.001
+  num_classes: 2
+  k: 10
+  tau: 1
+  hidden_dims: 256
